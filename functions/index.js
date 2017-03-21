@@ -11,12 +11,12 @@ const database = admin.database();
 //Initialize the game by assigning roles to the players
 exports.initGame = functions.database.ref('/VillagesPlaying/{village}').onWrite(event => {
 
-	//If event has changed, do nothing
+	//If event has been changed, do nothing
   if (event.data.previous.exists()) {
     return;
   }
 
-  //If event has removed, do nothing
+  //If event has been removed, do nothing
   if (!event.data.exists()) {
     return;
   }
@@ -28,7 +28,7 @@ exports.initGame = functions.database.ref('/VillagesPlaying/{village}').onWrite(
   database.ref('/VillagesFree/'+village).remove();
 
   //Get promises from roles and players in village 
-	const getRoles = database.ref('/VillageRoles/'+village).once('value');
+  const getRoles = database.ref('/VillageRoles/'+village).once('value');
   const getPlayers = database.ref('/VillagePlayer/'+village).once('value');
 
   return Promise.all([getRoles, getPlayers]).then(results => {
@@ -44,28 +44,28 @@ exports.initGame = functions.database.ref('/VillagesPlaying/{village}').onWrite(
     //Take all roles in array
     let rolesArray = [];
 
-  	_.forEach(results[0].val(), function(value, key) {
-  		const valInt = _.parseInt(value);
-			
+    _.forEach(results[0].val(), function(value, key) {
+      const valInt = _.parseInt(value);
+
       //If value is greater than 1, add this rol as many times as value
       if( valInt > 1){
-			  rolesArray = _.concat(rolesArray,Array(valInt).fill(key));
-			}else{
-			  rolesArray.push(key);
-      }
+       rolesArray = _.concat(rolesArray,Array(valInt).fill(key));
+     }else{
+       rolesArray.push(key);
+     }
 
-		});
+   });
 
     //If number of players is different to number of roles, do nothing
-		if(_.size(playerArray) != _.size(rolesArray)){
-			return;
-		}
+    if(_.size(playerArray) != _.size(rolesArray)){
+     return;
+   }
 
     //Initialize player's roles randomly
-  	const dict = _.zipObject(playerArray,_.shuffle(rolesArray));	
-  		return database.ref('/VillagePlayer/'+village).set(dict);
-  	});
-      	
+    const dict = _.zipObject(playerArray,_.shuffle(rolesArray));	
+    return database.ref('/VillagePlayer/'+village).set(dict);
+  });
+
 });
 
 //Send a notification to the players with current role, wait 60 seconds, and change the turn.
@@ -112,43 +112,63 @@ exports.changeTurn = functions.database.ref('/PlayingTurn/{village}').onWrite(ev
 
       //Initialize the notification payload
       const payload = {
-	      notification: {
-	        title: 'Tu turno!',
-	        body: 'Te toca jugar '+rol
-	      }
-    	};
+       notification: {
+         title: 'Tu turno!',
+         body: 'Te toca jugar '+rol
+       }
+     };
 
       //Send a notification to all players with current role
-    	return admin.messaging().sendToDevice(tokens, payload).then(response => {
+      return admin.messaging().sendToDevice(tokens, payload).then(response => {
 
-        //Wait 60 econds
-    		setTimeout(() => {
+        //Wait 60 seconds
+        setTimeout(() => {
 
-		      database.ref('/VillageTurns/'+village).once('value').then(function(snapshot){
+          database.ref('/VillageTurns/'+village).once('value').then(function(snapshot){
 
             //Get the turns of the village
-		      	const turns = _.values(snapshot.val());
+            const turns = _.values(snapshot.val());
 
             //If doesn't have turns, do nothing
-		      	if(!turns){
-		      		return;
-		      	}
+            if(!turns){
+              return;
+            }
 
             //Check the current turn and get the index if it exist
-		      	let index = _.indexOf(turns, rol);
+            let index = _.indexOf(turns, rol);
 
-		      	if(index > -1){
+            if(index > -1){
 
               //Check the next role and get it if exist
-		      		let nextRol = turns[index + 1];
-		      		if(nextRol != null){
+              let nextRol = turns[index + 1];
+              if(nextRol != null){
                 //Change to the next role
-		      			return database.ref('/PlayingTurn/'+village).set(nextRol);
-		      		}
-		      	}
-		      	return;
-		      });
-	      }, 60000);
-    	});
+                return database.ref('/PlayingTurn/'+village).set(nextRol);
+              }
+            }
+            return;
+          });
+        }, 60000);
+      });
     });
+});
+
+exports.deleteVillage = functions.database.ref('/Villages/{village}').onWrite(event => {
+
+  //Get village name
+  const village = event.params.village;
+
+  if(!event.data.exists){
+
+    //If village has been removed, remove all entries
+    var updates = {};
+    updates['/PlayingTurn/'+village] = null;
+    updates['/VillagePlayer/'+village] = null;
+    updates['/VillageRoles/'+village] = null;
+    updates['/VillageTurns/'+village] = null;
+    updates['/VillagesPlaying/'+village] = null;
+    updates['/VillagesFree/'+village] = null;
+    return database.ref().update(updates);
+  }
+  return;
 });
